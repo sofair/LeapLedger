@@ -1,40 +1,26 @@
 package main
 
 import (
-	"KeepAccount/global"
 	userModel "KeepAccount/model/user"
 	userService "KeepAccount/service/user"
-	"crypto/sha256"
-	"encoding/hex"
+	"KeepAccount/util"
+	"context"
 	"fmt"
-	"gorm.io/gorm"
-	"strconv"
-	"time"
 )
 
 func main() {
 	create()
 }
 func create() {
-	email := strconv.FormatInt(time.Now().UnixNano()%1e9, 10) + "@gmail.com"
+	email := "share_account_child@gmail.com"
 	password := "1999123456"
-	username := "test" + strconv.FormatInt(time.Now().UnixNano()%1e5, 10)
-	bytes := []byte(email + password)
-	hash := sha256.Sum256(bytes)
-	password = hex.EncodeToString(hash[:])
+	username := "child"
 	addData := userModel.AddData{
 		Email:    email,
-		Password: password,
+		Password: util.ClientPasswordHash(email, password),
 		Username: username,
 	}
-	var user userModel.User
-	err := global.GvaDb.Transaction(
-		func(tx *gorm.DB) error {
-			var err error
-			user, err = userService.GroupApp.Base.Register(addData, tx)
-			return err
-		},
-	)
+	user, err := userService.GroupApp.Register(addData, context.Background())
 	if err != nil {
 		panic(err)
 	}

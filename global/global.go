@@ -6,9 +6,12 @@ import (
 )
 
 var (
-	GvaDb  = initialize.Db
-	Config = initialize.Config
-	Cache  = initialize.Cache
+	GvaDb        = initialize.Db
+	GvaRdb       = initialize.Rdb
+	Config       = initialize.Config
+	Cache        = initialize.Cache
+	TestUserId   uint
+	TestUserInfo string
 )
 
 var (
@@ -19,6 +22,7 @@ var (
 
 func init() {
 	GvaDb = initialize.Db
+	GvaRdb = initialize.Rdb
 	Config = initialize.Config
 	Cache = initialize.Cache
 

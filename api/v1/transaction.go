@@ -3,58 +3,79 @@ package v1
 import (
 	"KeepAccount/api/request"
 	"KeepAccount/api/response"
-	"KeepAccount/global"
 	"KeepAccount/global/constant"
+	"KeepAccount/global/cus"
+	"KeepAccount/global/db"
 	accountModel "KeepAccount/model/account"
 	categoryModel "KeepAccount/model/category"
 	transactionModel "KeepAccount/model/transaction"
-	"KeepAccount/util"
-	"KeepAccount/util/dataType"
+	"KeepAccount/util/dataTool"
+	"KeepAccount/util/timeTool"
+	"context"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+	"log"
 	"time"
 )
 
 type TransactionApi struct {
 }
 
-func (t *TransactionApi) transactionApi() {}
+// GetOne
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int	true	"Account ID"
+//	@Param		id			path		int	true	"Transaction ID"
+//	@Success	200			{object}	response.Data{Data=response.TransactionDetail}
+//	@Router		/account/{accountId}/transaction/{id} [get]
 func (t *TransactionApi) GetOne(ctx *gin.Context) {
 	trans, ok := contextFunc.GetTransByParam(ctx)
 	if false == ok {
 		return
 	}
-	response.OkWithData(response.TransactionModelToResponse(trans), ctx)
+	var data response.TransactionDetail
+	err := data.SetData(trans, nil)
+	if responseError(err, ctx) {
+		return
+	}
+	response.OkWithData(data, ctx)
 }
 
+// CreateOne
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int								true	"Account ID"
+//	@Param		id			path		int								true	"Transaction ID"
+//	@Param		body		body		request.TransactionCreateOne	true	"transaction data"
+//	@Success	200			{object}	response.Data{Data=response.TransactionDetail}
+//	@Router		/account/{accountId}/transaction/{id} [post]
 func (t *TransactionApi) CreateOne(ctx *gin.Context) {
 	var requestData request.TransactionCreateOne
 	if err := ctx.ShouldBindJSON(&requestData); err != nil {
 		response.FailToParameter(ctx, err)
 		return
 	}
-	account, accountUser, pass := checkFunc.AccountBelongAndGet(requestData.AccountId, ctx)
-	if false == pass {
-		return
-	}
 
+	accountUser := contextFunc.GetAccountUser(ctx)
 	transaction := transactionModel.Transaction{
-		AccountId:     requestData.AccountId,
-		CategoryId:    requestData.CategoryId,
-		IncomeExpense: requestData.IncomeExpense,
-		Amount:        requestData.Amount,
-		Remark:        requestData.Remark,
-		TradeTime:     time.Unix(int64(requestData.TradeTime), 0),
+		Info: transactionModel.Info{
+			AccountId:     accountUser.AccountId,
+			UserId:        accountUser.UserId,
+			CategoryId:    requestData.CategoryId,
+			IncomeExpense: requestData.IncomeExpense,
+			Amount:        requestData.Amount,
+			Remark:        requestData.Remark,
+			TradeTime:     requestData.TradeTime,
+		},
 	}
-	err := global.GvaDb.Transaction(
-		func(tx *gorm.DB) error {
-			userClient, err := contextFunc.GetUserCurrentClientInfo(ctx)
-			if err != nil {
-				return err
-			}
-			// 新交易非客户端当前使用账本 则异步更新统计数据 以加快接口响应
-			asyncUpdateStatistic := transaction.AccountId != userClient.CurrentAccountId
-			transaction, err = transactionService.CreateOne(transaction, accountUser, asyncUpdateStatistic, tx)
+	err := db.Transaction(
+		ctx, func(ctx *cus.TxContext) error {
+			var err error
+			transaction, err = transactionService.Create(transaction.Info, accountUser,
+				transactionService.NewDefaultOption(), ctx)
 			return err
 		},
 	)
@@ -63,52 +84,66 @@ func (t *TransactionApi) CreateOne(ctx *gin.Context) {
 	}
 
 	var responseData response.TransactionDetail
-	if err = responseData.SetData(transaction, &account); responseError(err, ctx) {
+	if err = responseData.SetData(transaction, nil); responseError(err, ctx) {
 		return
 	}
 	response.OkWithData(responseData, ctx)
 }
 
+// Update
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int								true	"Account ID"
+//	@Param		id			path		int								true	"Transaction ID"
+//	@Param		body		body		request.TransactionCreateOne	true	"Transaction data"
+//	@Success	200			{object}	response.Data{Data=response.TransactionDetail}
+//	@Router		/account/{accountId}/transaction/{id} [put]
 func (t *TransactionApi) Update(ctx *gin.Context) {
 	var requestData request.TransactionUpdateOne
 	if err := ctx.ShouldBindJSON(&requestData); err != nil {
 		response.FailToParameter(ctx, err)
 		return
 	}
-	id, ok := contextFunc.GetParamId(ctx)
+	oldTrans, ok := contextFunc.GetTransByParam(ctx)
 	if false == ok {
 		return
 	}
-	account, accountUser, pass := checkFunc.AccountBelongAndGet(requestData.AccountId, ctx)
-	if false == pass {
-		return
-	}
 	transaction := transactionModel.Transaction{
-		UserId:        requestData.UserId,
-		AccountId:     requestData.AccountId,
-		CategoryId:    requestData.CategoryId,
-		IncomeExpense: requestData.IncomeExpense,
-		Amount:        requestData.Amount,
-		Remark:        requestData.Remark,
-		TradeTime:     time.Unix(int64(requestData.TradeTime), 0),
-	}
-	transaction.ID = id
-	err := global.GvaDb.Transaction(
-		func(tx *gorm.DB) error {
-			return transactionService.Update(transaction, accountUser, tx)
+		Info: transactionModel.Info{
+			UserId:        oldTrans.UserId,
+			AccountId:     requestData.AccountId,
+			CategoryId:    requestData.CategoryId,
+			IncomeExpense: requestData.IncomeExpense,
+			Amount:        requestData.Amount,
+			Remark:        requestData.Remark,
+			TradeTime:     requestData.TradeTime,
 		},
-	)
+	}
+	transaction.ID = oldTrans.ID
+
+	err := transactionService.Update(transaction, contextFunc.GetAccountUser(ctx), transactionService.NewOption(), ctx)
 	if responseError(err, ctx) {
 		return
 	}
 
 	var responseData response.TransactionDetail
-	if err = responseData.SetData(transaction, &account); responseError(err, ctx) {
+	if err = responseData.SetData(transaction, nil); responseError(err, ctx) {
 		return
 	}
 	response.OkWithData(responseData, ctx)
 }
 
+// Delete
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int	true	"Account ID"
+//	@Param		id			path		int	true	"Transaction ID"
+//	@Success	200			{object}	response.NoContent
+//	@Router		/account/{accountId}/transaction/{id} [delete]
 func (t *TransactionApi) Delete(ctx *gin.Context) {
 	trans, pass := contextFunc.GetTransByParam(ctx)
 	if false == pass {
@@ -118,11 +153,7 @@ func (t *TransactionApi) Delete(ctx *gin.Context) {
 	if responseError(err, ctx) {
 		return
 	}
-	err = global.GvaDb.Transaction(
-		func(tx *gorm.DB) error {
-			return transactionService.Delete(trans, accountUser, tx)
-		},
-	)
+	err = transactionService.Delete(trans, accountUser, ctx)
 	if err != nil {
 		response.FailToError(ctx, err)
 		return
@@ -130,6 +161,14 @@ func (t *TransactionApi) Delete(ctx *gin.Context) {
 	response.Ok(ctx)
 }
 
+// GetList
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int	true	"Account ID"
+//	@Success	200			{object}	response.Data{Data=response.List[response.TransactionDetail]{}}
+//	@Router		/account/{accountId}/transaction/list [get]
 func (t *TransactionApi) GetList(ctx *gin.Context) {
 	var requestData request.TransactionGetList
 	if err := ctx.ShouldBindJSON(&requestData); err != nil {
@@ -145,15 +184,12 @@ func (t *TransactionApi) GetList(ctx *gin.Context) {
 		return
 	}
 
-	if pass := checkFunc.AccountBelong(requestData.AccountId, ctx); pass == false {
-		return
-	}
-
-	// 查询并获取结果
+	// select and response
 	condition := requestData.GetCondition()
+	condition.AccountId = contextFunc.GetAccountId(ctx)
 	var transactionList []transactionModel.Transaction
 	transactionList, err = transactionModel.NewDao().GetListByCondition(
-		condition, requestData.Limit, requestData.Offset,
+		condition, requestData.Offset, requestData.Limit,
 	)
 	if responseError(err, ctx) {
 		return
@@ -166,6 +202,15 @@ func (t *TransactionApi) GetList(ctx *gin.Context) {
 	response.OkWithData(responseData, ctx)
 }
 
+// GetTotal
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int							true	"Account ID"
+//	@Param		data		body		request.TransactionTotal	true	"Transaction total data"
+//	@Success	200			{object}	response.Data{Data=response.TransactionTotal{}}
+//	@Router		/account/{accountId}/transaction/total [get]
 func (t *TransactionApi) GetTotal(ctx *gin.Context) {
 	var requestData request.TransactionTotal
 	if err := ctx.ShouldBindJSON(&requestData); err != nil {
@@ -176,22 +221,29 @@ func (t *TransactionApi) GetTotal(ctx *gin.Context) {
 		response.FailToParameter(ctx, err)
 		return
 	}
-	if pass := checkFunc.AccountBelong(requestData.AccountId, ctx); pass == false {
-		return
-	}
-	// 查询条件
+	// condition
 	condition := requestData.GetStatisticCondition()
+	condition.AccountId = contextFunc.GetAccountId(ctx)
 	extCond := requestData.GetExtensionCondition()
-	// 查询并处理响应
+	// select and response
 	total, err := transactionModel.NewDao().GetIeStatisticByCondition(
 		requestData.IncomeExpense, condition, &extCond,
 	)
 	if responseError(err, ctx) {
 		return
 	}
-	response.OkWithData(response.TransactionTotal{IncomeExpenseStatistic: total}, ctx)
+	response.OkWithData(response.TransactionTotal{IEStatistic: total}, ctx)
 }
 
+// GetMonthStatistic
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int									true	"Account ID"
+//	@Param		data		body		request.TransactionMonthStatistic	true	"condition"
+//	@Success	200			{object}	response.Data{Data=response.List[response.TransactionStatistic]{}}
+//	@Router		/account/{accountId}/transaction/month/statistic [get]
 func (t *TransactionApi) GetMonthStatistic(ctx *gin.Context) {
 	var requestData request.TransactionMonthStatistic
 	if err := ctx.ShouldBindJSON(&requestData); err != nil {
@@ -205,29 +257,41 @@ func (t *TransactionApi) GetMonthStatistic(ctx *gin.Context) {
 	if pass := checkFunc.AccountBelong(requestData.AccountId, ctx); pass == false {
 		return
 	}
-	// 设置查询条件
-	condition := requestData.GetStatisticCondition()
-	months := util.Time.SplitMonths(condition.StartTime, condition.EndTime)
-	// 查询并处理响应
+	requestData.SetLocal(contextFunc.GetTimeLocation(ctx))
+	requestData.AccountId = contextFunc.GetAccountId(ctx)
+	// condition
+	statisticCondition, extCond := requestData.GetStatisticCondition(), requestData.GetExtensionCondition()
+	condition := statisticCondition
+	months := timeTool.SplitMonths(statisticCondition.StartTime, statisticCondition.EndTime)
+	// select and process
 	responseList := make([]response.TransactionStatistic, len(months), len(months))
 	dao := transactionModel.NewDao()
-	for i := 0; i < len(months); i++ {
-		condition.StartTime = months[len(months)-i-1]
-		condition.EndTime = util.Time.GetLastSecondOfMonth(condition.StartTime)
+	for i := len(months) - 1; i >= 0; i-- {
+		condition.StartTime = months[i][0]
+		condition.EndTime = months[i][1]
 
-		monthStatistic, err := dao.GetIeStatisticByCondition(requestData.IncomeExpense, condition, nil)
+		monthStatistic, err := dao.GetIeStatisticByCondition(requestData.IncomeExpense, condition, &extCond)
 		if responseError(err, ctx) {
 			return
 		}
 		responseList[i] = response.TransactionStatistic{
-			IncomeExpenseStatistic: monthStatistic,
-			StartTime:              condition.StartTime.Unix(),
-			EndTime:                condition.EndTime.Unix(),
+			IEStatistic: monthStatistic,
+			StartTime:   condition.StartTime,
+			EndTime:     condition.EndTime,
 		}
 	}
-	response.OkWithData(response.TransactionMonthStatistic{List: responseList}, ctx)
+	response.OkWithData(response.List[response.TransactionStatistic]{List: responseList}, ctx)
 }
 
+// GetDayStatistic
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int								true	"Account ID"
+//	@Param		data		body		request.TransactionDayStatistic	true	"condition"
+//	@Success	200			{object}	response.Data{Data=response.List[response.TransactionDayStatistic]{}}
+//	@Router		/account/{accountId}/transaction/day/statistic [get]
 func (t *TransactionApi) GetDayStatistic(ctx *gin.Context) {
 	var requestData request.TransactionDayStatistic
 	if err := ctx.ShouldBindJSON(&requestData); err != nil {
@@ -238,17 +302,17 @@ func (t *TransactionApi) GetDayStatistic(ctx *gin.Context) {
 		response.FailToParameter(ctx, err)
 		return
 	}
-	account, _, pass := checkFunc.AccountBelongAndGet(requestData.AccountId, ctx)
-	if pass == false {
-		return
-	}
+	timeLocation := contextFunc.GetTimeLocation(ctx)
+	requestData.AccountId = contextFunc.GetAccountId(ctx)
+	requestData.SetLocal(timeLocation)
 	// 处理请求
 	var startTime, endTime = requestData.FormatDayTime()
-	days := util.Time.SplitDays(startTime, endTime)
+	log.Print(startTime.Hour(), startTime.Location(), endTime.Hour())
+	days := timeTool.SplitDays(startTime, endTime)
 	dayMap := make(map[time.Time]*response.TransactionDayStatistic, len(days))
 	condition := transactionModel.StatisticCondition{
 		ForeignKeyCondition: transactionModel.ForeignKeyCondition{
-			AccountId:   account.ID,
+			AccountId:   requestData.AccountId,
 			CategoryIds: requestData.CategoryIds,
 		},
 		StartTime: startTime,
@@ -260,8 +324,10 @@ func (t *TransactionApi) GetDayStatistic(ctx *gin.Context) {
 			return err
 		}
 		for _, item := range statistics {
-			dayMap[item.Date].Amount += item.Amount
-			dayMap[item.Date].Count += item.Count
+			log.Print(item.Date.In(timeLocation).Day(), item.Date.In(timeLocation).Hour(),
+				item.Date.In(timeLocation).Location())
+			dayMap[item.Date.In(timeLocation)].Amount += item.Amount
+			dayMap[item.Date.In(timeLocation)].Count += item.Count
 		}
 		return nil
 	}
@@ -269,7 +335,7 @@ func (t *TransactionApi) GetDayStatistic(ctx *gin.Context) {
 	var err error
 	responseData := make([]response.TransactionDayStatistic, len(days), len(days))
 	for i, day := range days {
-		responseData[i] = response.TransactionDayStatistic{Date: day.Unix()}
+		responseData[i] = response.TransactionDayStatistic{Date: day}
 		dayMap[day] = &responseData[i]
 	}
 	if requestData.IncomeExpense != nil {
@@ -285,11 +351,18 @@ func (t *TransactionApi) GetDayStatistic(ctx *gin.Context) {
 			return
 		}
 	}
-	response.OkWithData(
-		response.List[response.TransactionDayStatistic]{List: responseData}, ctx,
-	)
+	response.OkWithData(response.List[response.TransactionDayStatistic]{List: responseData}, ctx)
 }
 
+// GetCategoryAmountRank
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int										true	"Account ID"
+//	@Param		data		body		request.TransactionCategoryAmountRank	true	"condition"
+//	@Success	200			{object}	response.Data{Data=response.List[response.TransactionCategoryAmountRank]{}}
+//	@Router		/account/{accountId}/transaction/category/amount/rank [get]
 func (t *TransactionApi) GetCategoryAmountRank(ctx *gin.Context) {
 	var requestData request.TransactionCategoryAmountRank
 	if err := ctx.ShouldBindJSON(&requestData); err != nil {
@@ -299,11 +372,10 @@ func (t *TransactionApi) GetCategoryAmountRank(ctx *gin.Context) {
 	if err := requestData.CheckTimeFrame(); responseError(err, ctx) {
 		return
 	}
-	account, _, pass := checkFunc.AccountBelongAndGet(requestData.AccountId, ctx)
-	if pass == false {
-		return
-	}
-	// 处理查询
+	requestData.AccountId = contextFunc.GetAccountId(ctx)
+	requestData.SetLocal(contextFunc.GetTimeLocation(ctx))
+	account := contextFunc.GetAccount(ctx)
+	// fetch ranking List
 	var startTime, endTime = requestData.FormatDayTime()
 	condition := transactionModel.CategoryAmountRankCondition{
 		Account:   account,
@@ -311,7 +383,7 @@ func (t *TransactionApi) GetCategoryAmountRank(ctx *gin.Context) {
 		EndTime:   endTime,
 	}
 	var err error
-	var rankingList dataType.Slice[uint, transactionModel.CategoryAmountRank]
+	var rankingList dataTool.Slice[uint, transactionModel.CategoryAmountRank]
 	rankingList, err = transactionModel.NewStatisticDao().GetCategoryAmountRank(
 		requestData.IncomeExpense, condition, requestData.Limit,
 	)
@@ -324,9 +396,9 @@ func (t *TransactionApi) GetCategoryAmountRank(ctx *gin.Context) {
 			return rank.CategoryId
 		},
 	)
-	// 获取category
-	var categoryList dataType.Slice[uint, categoryModel.Category]
-	err = global.GvaDb.Where("id IN (?)", categoryIds).Find(&categoryList).Error
+	// fetch category
+	var categoryList dataTool.Slice[uint, categoryModel.Category]
+	err = db.Db.Where("id IN (?)", categoryIds).Find(&categoryList).Error
 	if responseError(err, ctx) {
 		return
 	}
@@ -335,8 +407,8 @@ func (t *TransactionApi) GetCategoryAmountRank(ctx *gin.Context) {
 			return category.ID
 		},
 	)
-	// 处理响应
-	responseData := make([]response.TransactionCategoryAmountRank, len(rankingList), requestData.Limit)
+	// response
+	responseData := make([]response.TransactionCategoryAmountRank, len(rankingList), len(rankingList))
 	for i, rank := range rankingList {
 		responseData[i].Amount = rank.Amount
 		responseData[i].Count = rank.Count
@@ -345,24 +417,173 @@ func (t *TransactionApi) GetCategoryAmountRank(ctx *gin.Context) {
 			return
 		}
 	}
-	//数量不足时补足响应数量
-	if len(rankingList) < requestData.Limit {
-		categoryList = []categoryModel.Category{}
-		limit := requestData.Limit - len(rankingList)
-		db := global.GvaDb.Where("account_id = ?", account.ID)
-		db = db.Where("income_expense = ?", requestData.IncomeExpense)
-		err = db.Where("id NOT IN (?)", categoryIds).Limit(limit).Find(&categoryList).Error
+
+	categoryList = []categoryModel.Category{}
+	query := db.Db.Where("account_id = ?", account.ID)
+	query = query.Where("income_expense = ?", requestData.IncomeExpense)
+	if len(categoryIds) > 0 {
+		query = query.Where("id NOT IN (?)", categoryIds)
+	}
+	err = query.Find(&categoryList).Error
+	if responseError(err, ctx) {
+		return
+	}
+	for _, category := range categoryList {
+		responseCategory := response.TransactionCategoryAmountRank{}
+		err = responseCategory.Category.SetData(category)
 		if responseError(err, ctx) {
 			return
 		}
-		for _, category := range categoryList {
-			responseCategory := response.TransactionCategoryAmountRank{}
-			err = responseCategory.Category.SetData(category)
-			if responseError(err, ctx) {
-				return
-			}
-			responseData = append(responseData, responseCategory)
-		}
+		responseData = append(responseData, responseCategory)
 	}
 	response.OkWithData(response.List[response.TransactionCategoryAmountRank]{List: responseData}, ctx)
+}
+
+// GetAmountRank
+//
+//	@Tags		Transaction
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int								true	"Account ID"
+//	@Param		data		body		request.TransactionAmountRank	true	"condition"
+//	@Success	200			{object}	response.Data{Data=response.List[response.TransactionDetailList]{}}
+//	@Router		/account/{accountId}/transaction/amount/rank [get]
+func (t *TransactionApi) GetAmountRank(ctx *gin.Context) {
+	var requestData request.TransactionAmountRank
+	if err := ctx.ShouldBindJSON(&requestData); err != nil {
+		response.FailToParameter(ctx, err)
+		return
+	}
+	if err := requestData.CheckTimeFrame(); err != nil {
+		response.FailToParameter(ctx, err)
+		return
+	}
+	requestData.SetLocal(contextFunc.GetTimeLocation(ctx))
+	requestData.AccountId = contextFunc.GetAccountId(ctx)
+	// fetch
+	timeCond := transactionModel.NewTimeCondition()
+	timeCond.SetTradeTimes(requestData.StartTime, requestData.EndTime)
+	rankingList, err := transactionModel.NewDao().GetAmountRank(
+		requestData.AccountId, requestData.IncomeExpense, *timeCond,
+	)
+	if responseError(err, ctx) {
+		return
+	}
+	// response
+	var responseList response.TransactionDetailList
+	err = responseList.SetData(rankingList)
+	if responseError(err, ctx) {
+		return
+	}
+	response.OkWithData(response.List[response.TransactionDetail]{List: responseList}, ctx)
+}
+
+// CreateTiming
+//
+//	@Tags		Transaction/Timing
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int							true	"Account ID"
+//	@Param		data		body		request.TransactionTiming	true	"timing config"
+//	@Success	200			{object}	response.Data{Data=response.TransactionTiming}
+//	@Router		/account/{accountId}/transaction/timing [post]
+func (t *TransactionApi) CreateTiming(ctx *gin.Context) {
+	var requestData request.TransactionTiming
+	if err := ctx.ShouldBindJSON(&requestData); err != nil {
+		response.FailToParameter(ctx, err)
+		return
+	}
+	requestData.Trans.AccountId = contextFunc.GetAccountId(ctx)
+	timing := requestData.GetTimingModel()
+	if timing.UserId != contextFunc.GetUserId(ctx) || timing.TransInfo.UserId != contextFunc.GetUserId(ctx) {
+		response.Forbidden(ctx)
+		return
+	}
+	// handle
+	var err error
+	err = db.Transaction(
+		ctx, func(ctx *cus.TxContext) error {
+			timing, err = transactionService.Timing.CreateTiming(timing, ctx)
+			return err
+		},
+	)
+	if responseError(err, ctx) {
+		return
+	}
+	// response
+	var responseData response.TransactionTiming
+	err = responseData.SetData(timing)
+	if responseError(err, ctx) {
+		return
+	}
+	response.OkWithData(responseData, ctx)
+}
+
+// UpdateTiming
+//
+//	@Tags		Transaction/Timing
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int							true	"Account ID"
+//	@Param		id			path		int							true	"Transaction ID"
+//	@Param		data		body		request.TransactionTiming	true	"timing config"
+//	@Success	200			{object}	response.Data{Data=response.TransactionTiming}
+//	@Router		/account/{accountId}/transaction/timing/{id} [put]
+func (t *TransactionApi) UpdateTiming(ctx *gin.Context) {
+	var requestData request.TransactionTiming
+	if err := ctx.ShouldBindJSON(&requestData); err != nil {
+		response.FailToParameter(ctx, err)
+		return
+	}
+	requestData.Trans.AccountId = contextFunc.GetAccountId(ctx)
+	timing := requestData.GetTimingModel()
+	timing.ID = contextFunc.GetId(ctx)
+	// handle
+	var err error
+	err = db.Transaction(
+		ctx, func(ctx *cus.TxContext) error {
+			tx := ctx.GetDb()
+			timing, err = transactionService.Timing.UpdateTiming(timing, context.WithValue(ctx, cus.Db, tx))
+			return err
+		},
+	)
+	if responseError(err, ctx) {
+		return
+	}
+	// response
+	var responseData response.TransactionTiming
+	err = responseData.SetData(timing)
+	if responseError(err, ctx) {
+		return
+	}
+	response.OkWithData(responseData, ctx)
+}
+
+// GetTimingList
+//
+//	@Tags		Transaction/Timing
+//	@Accept		json
+//	@Produce	json
+//	@Param		accountId	path		int					true	"Account ID"
+//	@Param		data		body		request.PageData	true	"Page data"
+//	@Success	200			{object}	response.Data{Data=response.List[response.TransactionTiming]}
+//	@Router		/account/{accountId}/transaction/timing/list [get]
+func (t *TransactionApi) GetTimingList(ctx *gin.Context) {
+	var requestData request.PageData
+	if err := ctx.ShouldBindJSON(&requestData); err != nil {
+		response.FailToParameter(ctx, err)
+		return
+	}
+	list, err := transactionModel.NewDao().SelectTimingListByUserId(contextFunc.GetAccountId(ctx), requestData.Offset,
+		requestData.Limit)
+	if responseError(err, ctx) {
+		return
+	}
+	// response
+	var responseData response.TransactionTimingList
+	err = responseData.SetData(list)
+	if responseError(err, ctx) {
+		return
+	}
+	response.OkWithData(response.List[response.TransactionTiming]{List: responseData}, ctx)
 }

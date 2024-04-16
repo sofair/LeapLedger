@@ -3,24 +3,23 @@ package thirdpartyService
 import (
 	"KeepAccount/global/constant"
 	"KeepAccount/service/thirdparty/email"
-	"KeepAccount/util"
-	"fmt"
+	_log "KeepAccount/util/log"
 	"go.uber.org/zap"
 	"reflect"
 	"time"
 )
 
 type Group struct {
-	aiServer
+	Ai aiServer
 }
 
-var App = new(Group)
+var GroupApp = new(Group)
 var log *zap.Logger
 
 // 初始化
 func init() {
 	var err error
-	if log, err = util.Log.GetNewZapLogger(constant.LOG_PAYH + "/service/thirdparty/email.log"); err != nil {
+	if log, err = _log.GetNewZapLogger(constant.LOG_PATH + "/service/thirdparty/email.log"); err != nil {
 		panic(err)
 	}
 	go startService()
@@ -54,7 +53,6 @@ type task struct {
 
 func (t *task) handleError(err error) {
 	if err != nil {
-		fmt.Println(err)
 		log.Error(reflect.TypeOf(*t).Name(), zap.Error(err))
 	}
 	t.err = err

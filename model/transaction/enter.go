@@ -1,25 +1,16 @@
 package transactionModel
 
-import (
-	"KeepAccount/global"
-)
-
-type dao struct {
-}
-
-var (
-	Dao = &dao{}
-)
+import "KeepAccount/global/db"
 
 func init() {
 	tables := []interface{}{
-		IncomeCategoryStatistic{}, IncomeAccountStatistic{}, IncomeAccountUserStatistic{}, ExpenseCategoryStatistic{},
-		ExpenseAccountStatistic{}, ExpenseAccountUserStatistic{},
+		Transaction{}, Mapping{},
+		ExpenseAccountStatistic{}, ExpenseAccountUserStatistic{}, ExpenseCategoryStatistic{},
+		IncomeAccountStatistic{}, IncomeAccountUserStatistic{}, IncomeCategoryStatistic{},
+		Timing{}, TimingExec{},
 	}
-	for _, table := range tables {
-		err := global.GvaDb.AutoMigrate(&table)
-		if err != nil {
-			panic(err)
-		}
+	err := db.InitDb.AutoMigrate(tables...)
+	if err != nil {
+		panic(err)
 	}
 }

@@ -13,13 +13,19 @@ type CommonApi struct {
 
 var captchaStore = base64Captcha.DefaultMemStore
 
+// Captcha
+//
+//	@Tags		Common
+//	@Produce	json
+//	@Success	200	{object}	response.Data{Data=response.CommonCaptcha}
+//	@Router		/public/captcha [get]
 func (p *PublicApi) Captcha(c *gin.Context) {
 	driver := base64Captcha.NewDriverDigit(
 		global.Config.Captcha.ImgHeight, global.Config.Captcha.ImgWidth, global.Config.Captcha.KeyLong, 0.7,
 		80,
 	)
 	cp := base64Captcha.NewCaptcha(driver, captchaStore)
-	id, b64s, err := cp.Generate()
+	id, b64s, _, err := cp.Generate()
 	if err != nil {
 		response.FailWithMessage("验证码获取失败", c)
 		return
@@ -33,6 +39,14 @@ func (p *PublicApi) Captcha(c *gin.Context) {
 	)
 }
 
+// SendEmailCaptcha
+//
+//	@Tags		Common
+//	@Accept		json
+//	@Produce	json
+//	@Param		body	body		request.CommonSendEmailCaptcha	true	"data"
+//	@Success	200		{object}	response.Data{Data=response.ExpirationTime}
+//	@Router		/public/captcha/email/send [post]
 func (p *PublicApi) SendEmailCaptcha(ctx *gin.Context) {
 	var requestData request.CommonSendEmailCaptcha
 	if err := ctx.ShouldBindJSON(&requestData); err != nil {

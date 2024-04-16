@@ -1,8 +1,15 @@
 package categoryModel
 
-type dao struct {
-}
-
-var (
-	Dao = &dao{}
+import (
+	"KeepAccount/global/db"
 )
+
+func init() {
+	tables := []interface{}{
+		Category{}, Mapping{}, Father{},
+	}
+	err := db.InitDb.AutoMigrate(tables...)
+	if err != nil {
+		panic(err)
+	}
+}

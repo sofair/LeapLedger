@@ -1,22 +1,23 @@
 package initialize
 
 import (
+	"KeepAccount/global/constant"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"os"
 )
 
 type _logger struct {
-	Path    string          `yaml:"Path"`   // 日志路径
-	Level   string          `yaml:"Level"`  // 日志级别
-	Format  string          `yaml:"Format"` // 日志格式
-	encoder zapcore.Encoder // 这是一个字段，不需要YAML标签
+	encoder zapcore.Encoder
 }
 
 const (
-	_requestLogPath = "log/request.log"
-	_errorLogPath   = "log/error.log"
-	_panicLogPath   = "log/panic.log"
+	_requestLogPath    = constant.WORK_PATH + "/log/request.log"
+	_errorLogPath      = constant.WORK_PATH + "/log/error.log"
+	_panicLogPath      = constant.WORK_PATH + "/log/panic.log"
+	_natsLogPath       = constant.WORK_PATH + "/log/nats.log"
+	_cronLogPath       = constant.WORK_PATH + "/log/cron.log"
+	_natsServerLogPath = constant.WORK_PATH + "/log/natsServer.log"
 )
 
 func (l *_logger) do() error {
@@ -29,6 +30,12 @@ func (l *_logger) do() error {
 		return err
 	}
 	if PanicLogger, err = l.initLogger(_panicLogPath); err != nil {
+		return err
+	}
+	if NatsLogger, err = l.initLogger(_natsLogPath); err != nil {
+		return err
+	}
+	if CronLogger, err = l.initLogger(_cronLogPath); err != nil {
 		return err
 	}
 	return nil

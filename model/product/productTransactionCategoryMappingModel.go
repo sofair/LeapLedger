@@ -4,16 +4,17 @@ import (
 	"KeepAccount/global"
 	accountModel "KeepAccount/model/account"
 	commonModel "KeepAccount/model/common"
+	"database/sql"
 	"time"
 )
 
 type TransactionCategoryMapping struct {
-	AccountID  uint
-	CategoryID uint
-	PtcID      uint
+	AccountId  uint `gorm:"uniqueIndex:account_ptc_mapping,priority:1"`
+	CategoryId uint `gorm:"uniqueIndex:category_ptc_mapping,priority:1"`
+	PtcId      uint `gorm:"uniqueIndex:account_ptc_mapping,priority:2;uniqueIndex:category_ptc_mapping,priority:2"`
 	ProductKey string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	CreatedAt  time.Time `gorm:"type:TIMESTAMP"`
+	UpdatedAt  time.Time `gorm:"type:TIMESTAMP"`
 	commonModel.BaseModel
 }
 
@@ -22,7 +23,7 @@ func (tcm *TransactionCategoryMapping) TableName() string {
 }
 
 func (tcm *TransactionCategoryMapping) IsEmpty() bool {
-	return tcm == nil || tcm.AccountID == 0
+	return tcm == nil || tcm.AccountId == 0
 }
 
 func (tcm *TransactionCategoryMapping) GetPtcIdMapping(
@@ -32,12 +33,23 @@ func (tcm *TransactionCategoryMapping) GetPtcIdMapping(
 	rows, err := db.Model(&TransactionCategoryMapping{}).Where(
 		"account_id = ? AND product_key = ?", account.ID, productKey,
 	).Rows()
-	defer rows.Close()
-
+	defer func(rows *sql.Rows) {
+		if err != nil {
+			_ = rows.Close()
+		} else {
+			err = rows.Close()
+		}
+	}(rows)
+	if err != nil {
+		return
+	}
 	row, result := TransactionCategoryMapping{}, map[uint]TransactionCategoryMapping{}
 	for rows.Next() {
-		db.ScanRows(rows, &row)
-		result[row.PtcID] = row
+		err = db.ScanRows(rows, &row)
+		if err != nil {
+			return
+		}
+		result[row.PtcId] = row
 	}
 	return
 }

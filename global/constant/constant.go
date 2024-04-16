@@ -1,18 +1,19 @@
 package constant
 
-var WORK_PATH string
+type ServerMode string
 
-var LOG_PAYH = WORK_PATH + "/log"
-var DATA_PATH = WORK_PATH + "/data"
+var Debug, Production ServerMode = "debug", "production"
 
-func init() {
-	WORK_PATH = "/server/KeepAccount"
-	LOG_PAYH = WORK_PATH + "/log"
-	DATA_PATH = WORK_PATH + "/data"
-}
+const WORK_PATH = "/go/LeapLedger"
+const RUNTIME_DATA_PATH = WORK_PATH + "/runtime/data"
+
+const LOG_PATH = WORK_PATH + "/log"
+const DATA_PATH = WORK_PATH + "/data"
+
+var ExampleAccountJsonPath = DATA_PATH + "/template/account/example.json"
 
 // IncomeExpense 收支类型
-type IncomeExpense string
+type IncomeExpense string //@name IncomeExpense `example:"expense" enums:"income,expense" swaggertype:"string"`
 
 const (
 	Income  IncomeExpense = "income"
@@ -77,3 +78,7 @@ const (
 	LogOperationOfUpdate LogOperation = "update"
 	LogOperationOfDelete LogOperation = "delete"
 )
+
+// nats
+
+type Subject string

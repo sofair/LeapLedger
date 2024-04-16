@@ -49,6 +49,10 @@ type UserHome struct {
 	AccountId uint
 }
 
+type TourApply struct {
+	DeviceNumber string
+}
+
 type TransactionShareConfigName string
 
 const (

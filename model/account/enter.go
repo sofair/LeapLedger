@@ -1,20 +1,16 @@
 package accountModel
 
-import "KeepAccount/global"
-
-type dao struct {
-}
-
-var (
-	Dao = &dao{}
+import (
+	"KeepAccount/global/db"
 )
 
 func init() {
-	tables := []interface{}{User{}, UserInvitation{}, Mapping{}}
-	for _, table := range tables {
-		err := global.GvaDb.AutoMigrate(&table)
-		if err != nil {
-			panic(err)
-		}
+	tables := []interface{}{
+		Account{}, Mapping{},
+		User{}, UserConfig{}, UserInvitation{},
+	}
+	err := db.InitDb.AutoMigrate(tables...)
+	if err != nil {
+		panic(err)
 	}
 }

@@ -8,14 +8,19 @@ import (
 	"gorm.io/gorm"
 )
 
-type ResponseData struct {
+type Data struct {
+	Data interface{}
+	Msg  string `example:"success"`
+} // @name Response
+
+type NoContent struct {
 	Data interface{}
 	Msg  string
-}
+} // @name NoContent
 
 func ResponseAndAbort(status int, data interface{}, msg string, ctx *gin.Context) {
 	ctx.AbortWithStatusJSON(
-		status, ResponseData{
+		status, Data{
 			data,
 			msg,
 		},
@@ -24,7 +29,7 @@ func ResponseAndAbort(status int, data interface{}, msg string, ctx *gin.Context
 
 func Response(status int, data interface{}, msg string, ctx *gin.Context) {
 	ctx.JSON(
-		status, ResponseData{
+		status, Data{
 			data,
 			msg,
 		},
@@ -99,7 +104,7 @@ func logError(ctx *gin.Context, err error) {
 }
 
 func Handle(err error, data interface{}, ctx *gin.Context) {
-	//recover交给gin框架
+	// recover交给gin框架
 	if r := recover(); r != nil {
 		return
 	}

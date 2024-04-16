@@ -2,6 +2,8 @@ package accountModel
 
 import (
 	"KeepAccount/global"
+	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -11,16 +13,35 @@ type AccountDao struct {
 
 func NewDao(db ...*gorm.DB) *AccountDao {
 	if len(db) > 0 {
-		return &AccountDao{
-			db: db[0],
-		}
+		return &AccountDao{db: db[0]}
 	}
 	return &AccountDao{global.GvaDb}
 }
 
 func (a *AccountDao) SelectById(id uint) (account Account, err error) {
-	err = a.db.Model(&account).First(&account, id).Error
+	err = a.db.Unscoped().First(&account, id).Error
 	return
+}
+
+func (a *AccountDao) GetAccountType(id uint) (accountType Type, err error) {
+	err = a.db.Model(&Account{}).Select("type").Where("id = ?", id).Scan(&accountType).Error
+	return
+}
+
+func (a *AccountDao) GetLocation(id uint) (location string) {
+	err := a.db.Model(&Account{}).Select("location").Where("id = ?", id).Scan(&location).Error
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func (a *AccountDao) GetTimeLocation(id uint) *time.Location {
+	l, err := time.LoadLocation(a.GetLocation(id))
+	if err != nil {
+		panic(err)
+	}
+	return l
 }
 
 func (a *AccountDao) Update(account Account, data AccountUpdateData) error {
@@ -43,10 +64,9 @@ func (a *AccountDao) SelectMappingByMainAccountAndRelatedUser(mainAccountId, use
 	return
 }
 
-func (a *AccountDao) SelectAllMappingByAccount(account Account) ([]Mapping, error) {
+func (a *AccountDao) SelectMultipleMapping(condition MappingCondition) ([]Mapping, error) {
 	var result []Mapping
-	err := a.db.Model(&Mapping{}).Where("main_id = ?", account.ID).Find(&result).Error
-	return result, err
+	return result, condition.addConditionToQuery(a.db).Find(&result).Error
 }
 
 func (a *AccountDao) CreateMapping(mainAccount Account, mappingAccount Account) (Mapping, error) {
@@ -72,6 +92,15 @@ func (a *AccountDao) CreateUser(accountId uint, userId uint, permission UserPerm
 	return data, a.db.Create(&data).Error
 }
 
+func (a *AccountDao) CreateUserConfig(accountId uint, userId uint) (UserConfig, error) {
+	data := UserConfig{
+		AccountId:  accountId,
+		UserId:     userId,
+		TransFlags: DefaultTransFlags,
+	}
+	return data, a.db.Create(&data).Error
+}
+
 func (a *AccountDao) UpdateUser(accountUser User, data UserUpdateData) (User, error) {
 	err := a.db.Model(&accountUser).Update("permission", data.Permission).Error
 	return accountUser, err
@@ -79,6 +108,11 @@ func (a *AccountDao) UpdateUser(accountUser User, data UserUpdateData) (User, er
 
 func (a *AccountDao) SelectUser(accountId uint, userId uint) (user User, err error) {
 	err = a.db.Where("account_id = ? AND user_id = ?", accountId, userId).First(&user).Error
+	return
+}
+
+func (a *AccountDao) CheckUserPermission(permission UserPermission, accountId uint, userId uint) (pass bool, err error) {
+	err = a.db.Model(&User{}).Where("account_id = ? AND user_id = ?", accountId, userId).Select("(permission & ?) > 0 as pass", permission).Pluck("pass", &pass).Error
 	return
 }
 
@@ -100,6 +134,11 @@ func (a *AccountDao) SelectUserListByUserAndAccountType(userId uint, t Type) (re
 	query := a.db.Where("account_user.user_id = ? AND account.type = ?", userId, t)
 	query = query.Select("account_user.*").Joins("LEFT JOIN account ON account.id = account_user.account_id")
 	err = query.Order("account_user.id ASC").Find(&result).Error
+	return
+}
+
+func (a *AccountDao) SelectUserConfig(accountId uint, userId uint) (userConfig UserConfig, err error) {
+	err = a.db.Where("account_id = ? AND user_id = ?", accountId, userId).First(&userConfig).Error
 	return
 }
 
