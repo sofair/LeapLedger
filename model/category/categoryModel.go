@@ -20,7 +20,7 @@ type Category struct {
 	OrderUpdatedAt time.Time              `gorm:"comment:'顺序更新时间';not null;default:now();type:TIMESTAMP;"`
 	CreatedAt      time.Time              `gorm:"type:TIMESTAMP"`
 	UpdatedAt      time.Time              `gorm:"type:TIMESTAMP"`
-	DeletedAt      gorm.DeletedAt         `gorm:"index;type:TIMESTAMP"`
+	DeletedAt      gorm.DeletedAt         `gorm:"index;type:TIMESTAMP;uniqueIndex:unique_name,priority:3"`
 	commonModel.BaseModel
 }
 
