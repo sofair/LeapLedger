@@ -35,4 +35,5 @@ func init() {
 	if global.Config.Mode == constant.Debug {
 		Engine.Use(middleware.RequestLogger(global.RequestLogger))
 	}
+	Engine.Use(middleware.GinHTTPMethodOverrideMiddleware(Engine, global.RequestLogger))
 }

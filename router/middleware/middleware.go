@@ -68,6 +68,7 @@ func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
+		originMethod := c.Request.Method
 		query := c.Request.URL.RawQuery
 		bodyBytes, err := io.ReadAll(c.Request.Body)
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -83,6 +84,8 @@ func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 			path,
 			zap.Int("status", c.Writer.Status()),
 			zap.String("method", c.Request.Method),
+			zap.String("http-origin-method", originMethod),
+			zap.String("http-override-method", c.GetHeader("Http-Method-Override")),
 			zap.String("path", path),
 			zap.String("query", query),
 			zap.String("body", body),
@@ -99,5 +102,23 @@ func AccountAuth(permission accountModel.UserPermission) gin.HandlerFunc {
 			return
 		}
 		ctx.Next()
+	}
+}
+
+func GinHTTPMethodOverrideMiddleware(r *gin.Engine, logger *zap.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if override := c.GetHeader("Http-Method-Override"); override != "" && override != c.Request.Method {
+			logger.Info(
+				c.Request.URL.Path,
+				zap.String("middleware", "GinHTTPMethodOverrideMiddleware"),
+				zap.String("http-origin-methode", c.Request.Method),
+				zap.String("http-overrde-method", override),
+			)
+			c.Request.Method = override
+			c.Abort()
+			r.HandleContext(c)
+			return
+		}
+		c.Next()
 	}
 }
